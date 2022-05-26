@@ -16,7 +16,8 @@
 
 import os
 import sys
-import shlex
+import subprocess
+
 from cortx.utils.log import Log
 from cortx.rgw.setup.error import SetupError
 from cortx.utils.conf_store import MappedConf
@@ -31,14 +32,21 @@ class RgwService:
         try:
             os.environ['M0_TRACE_DIR'] = motr_trace_dir
             cmd = "/usr/bin/radosgw"
-            args = f"-f --name client.rgw-{index} -c {config_file} --no-mon-config &> {log_file}"
-            args = shlex.split(args)
+            args = f" -f --name client.rgw-{index} -c {config_file} --no-mon-config &> {log_file}"
             sys.stdout.flush()
             sys.stderr.flush()
-            os.execl(cmd, cmd, *args)  # nosec
+            process = subprocess.Popen(cmd + args, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, shell=True,
+                                   stderr=subprocess.STDOUT)
         except OSError as e:
             Log.error(f"Failed to start radosgw service:{e}")
             raise SetupError(e.errno, "Failed to start radosgw service. %s", e)
         except Exception as e:
             Log.error(f"Failed to start radosgw service:{e}")
             raise SetupError(e, "Failed to start radosgw service. %s", e)
+        while True:
+            stdout = process.stdout.readline()
+            if process.poll() is not None:
+                break
+            if stdout:
+                Log.info(stdout.strip().decode())
